@@ -8,6 +8,7 @@ from xblock.core import XBlock
 from xblock.fields import Boolean, Dict, Scope, String, XBlockMixin
 from xblock.validation import ValidationMessage
 
+from lms.lib.utils import get_parent_unit
 from xmodule.modulestore.inheritance import UserPartitionList
 from xmodule.partitions.partitions import NoSuchUserPartitionError, NoSuchUserPartitionGroupError
 
@@ -17,6 +18,7 @@ _ = lambda text: text
 
 INVALID_USER_PARTITION_VALIDATION = _(u"This component's access settings refer to deleted or invalid group configurations.")
 INVALID_USER_PARTITION_GROUP_VALIDATION = _(u"This component's access settings refer to deleted or invalid groups.")
+NONSENSICAL_ACCESS_RESTRICTION = _(u"This component's access settings contradict the unit's access settings.")
 NONSENSICAL_ACCESS_RESTRICTION = _(u"This component's access settings contradict its parent's access settings.")
 
 
