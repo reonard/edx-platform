@@ -34,6 +34,7 @@ from courseware.tests.factories import GlobalStaffFactory, InstructorFactory, Us
 from lms.djangoapps.grades.tests.utils import mock_passing_grade
 from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
 from lms.djangoapps.verify_student.tests.factories import SoftwareSecurePhotoVerificationFactory
+from lms.djangoapps.instructor_task.api_helper import QueueConnectionError
 from student.models import CourseEnrollment
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
@@ -327,6 +328,28 @@ class CertificatesInstructorApiTest(SharedModuleStoreTestCase):
         self.assertIsNotNone(res_json['message'])
         self.assertIsNotNone(res_json['task_id'])
 
+
+    def test_certificate_generation_queue_connection_error(self):
+        """
+        write doc
+        """
+
+        self.client.login(username=self.global_staff.username, password='test')
+        url = reverse(
+            'start_certificate_generation',
+            kwargs={'course_id': unicode(self.course.id)}
+        )
+
+        message_queue_error = 'Error occured. Please try again later'
+        with mock.patch('lms.djangoapps.instructor_task.api.generate_certificates_for_students') as submit_task_function:
+            error = QueueConnectionError()
+            submit_task_function.side_effect = error
+            response = self.client.post(url, {})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(message_queue_error, response.content)
+
+
     def test_certificate_regeneration_success(self):
         """
         Test certificate regeneration is successful when accessed with 'certificate_statuses'
@@ -359,6 +382,32 @@ class CertificatesInstructorApiTest(SharedModuleStoreTestCase):
             u'Certificate regeneration task has been started. You can view the status of the generation task in '
             u'the "Pending Tasks" section.'
         )
+
+    def test_certificate_regeneration_queue_connection_error(self):
+        """
+        write doc
+        """
+
+        # Create a generated Certificate of some user with status 'downloadable'
+        GeneratedCertificateFactory.create(
+            user=self.user,
+            course_id=self.course.id,
+            status=CertificateStatuses.downloadable,
+            mode='honor'
+        )
+
+        # Login the client and access the url with 'certificate_statuses'
+        self.client.login(username=self.global_staff.username, password='test')
+        url = reverse('start_certificate_regeneration', kwargs={'course_id': unicode(self.course.id)})
+        message_queue_error = 'Error occured. Please try again later'
+
+        with mock.patch('lms.djangoapps.instructor_task.api.regenerate_certificates') as submit_task_function:
+            error = QueueConnectionError()
+            submit_task_function.side_effect = error
+            response = self.client.post(url, data={'certificate_statuses': [CertificateStatuses.downloadable]})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(message_queue_error, response.content)
 
     @override_settings(AUDIT_CERT_CUTOFF_DATE=datetime.now(pytz.UTC) - timedelta(days=1))
     @ddt.data(
@@ -885,6 +934,28 @@ class GenerateCertificatesInstructorApiTest(SharedModuleStoreTestCase):
             res_json['message'],
             u'Invalid data, generate_for must be "new" or "all".'
         )
+
+    def test_generate_certificate_exception_queue_connection_error(self):
+        """
+        write doc
+
+        """
+        url = reverse(
+            'generate_certificate_exceptions',
+            kwargs={'course_id': unicode(self.course.id), 'generate_for': 'new'}
+        )
+        message_queue_error = 'Error occured. Please try again later'
+
+        with mock.patch('lms.djangoapps.instructor_task.api.generate_certificates_for_students') as submit_task_function:
+            error = QueueConnectionError()
+            submit_task_function.side_effect = error
+            response = self.client.post(
+                url,
+                content_type='application/json'
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(message_queue_error, response.content)
 
 
 @attr(shard=1)
