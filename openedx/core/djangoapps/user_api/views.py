@@ -947,8 +947,8 @@ class RegistrationView(APIView):
                             )
 
                             if (field_name not in ['terms_of_service', 'honor_code']
-                                and field_overrides[field_name]
-                                and hide_registration_fields_except_tos):
+                                    and field_overrides[field_name]
+                                    and hide_registration_fields_except_tos):
 
                                 form_desc.override_field_properties(
                                     field_name,
