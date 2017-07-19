@@ -354,6 +354,13 @@ def _third_party_auth_context(request, redirect_to, tpa_hint=None):
                     if not enterprise_customer:
                         # As a reliable way of "skipping" the registration form, we just submit it automatically
                         context["autoSubmitRegForm"] = True
+                    else:
+                        context["autoRegisterWelcomeMessage"] = (
+                            'Thank you for joining {}. '
+                            'Just a couple steps before you start learning!'
+                        ).format(
+                            configuration_helpers.get_value('PLATFORM_NAME', settings.PLATFORM_NAME)
+                        )
 
         # Check for any error messages we may want to display:
         for msg in messages.get_messages(request):

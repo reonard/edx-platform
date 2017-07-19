@@ -45,6 +45,10 @@
                 </h3>
             </div>
         <% } %>
+    <% } else {%>
+        <% if (context.autoRegisterWelcomeMessage) { %>
+            <span class="text"><%- context.autoRegisterWelcomeMessage %></span>
+        <% } %>
     <% } %>
 
     <%= context.fields %>
