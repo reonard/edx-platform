@@ -38,6 +38,7 @@
                     this.platformName = data.platformName;
                     this.autoSubmit = data.thirdPartyAuth.autoSubmitRegForm;
                     this.hideAuthWarnings = data.hideAuthWarnings;
+                    this.autoRegisterWelcomeMessage = data.thirdPartyAuth.autoRegisterWelcomeMessage;
 
                     this.listenTo(this.model, 'sync', this.saveSuccess);
                 },
