@@ -2720,65 +2720,6 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
                                      " complete.".format(report_type=report_type)
             self.assertIn(already_running_status, res_json['status'])
 
-
-    @valid_problem_location
-    def test_get_problem_responses_queue_connection_error(self):
-        """
-        Test whether get_problem_responses returns an appropriate status
-        message when messaging queue is down.
-        """
-        url = reverse(
-            'get_problem_responses',
-            kwargs={'course_id': unicode(self.course.id)}
-        )
-        message_queue_error = 'Error occured. Please try again later'
-        with patch('lms.djangoapps.instructor_task.api.submit_calculate_problem_responses_csv') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
-
-    def test_problem_grade_report_queue_connection_error(self):
-        """
-        write doc
-        :return:
-        """
-        url = reverse(
-            'problem_grade_report',
-            kwargs={'course_id': unicode(self.course.id)}
-        )
-
-        message_queue_error = 'Error occured. Please try again later'
-        with patch('lms.djangoapps.instructor_task.api.submit_problem_grade_report') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
-    def test_get_course_survey_results_queue_connection_error(self):
-        """
-        write doc
-        :return:
-        """
-        url = reverse(
-            'get_course_survey_results',
-            kwargs={'course_id': unicode(self.course.id)}
-        )
-
-        message_queue_error = 'Error occured. Please try again later'
-        with patch('lms.djangoapps.instructor_task.api.submit_course_survey_report') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
     def test_get_students_features(self):
         """
         Test that some minimum of information is formatted
@@ -2865,25 +2806,6 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
             self.assertIn('status', res_json)
             self.assertIn(already_running_status, res_json['status'])
 
-    def test_get_students_who_may_enroll_queue_connection_error(self):
-        """
-        Test whether get_students_who_may_enroll returns an appropriate
-        status message when messaging queue is down.
-        """
-        url = reverse(
-            'get_students_who_may_enroll',
-            kwargs={'course_id': unicode(self.course.id)}
-        )
-        message_queue_error = 'Error occured. Please try again later'
-
-        with patch('lms.djangoapps.instructor_task.api.submit_calculate_may_enroll_csv') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
     def test_get_student_exam_results(self):
         """
         Test whether get_proctored_exam_results returns an appropriate
@@ -2913,25 +2835,6 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
             res_json = json.loads(response.content)
             self.assertIn('status', res_json)
             self.assertIn(already_running_status, res_json['status'])
-
-    def test_get_student_exam_results_queue_connection_error(self):
-        """
-        Test whether get_proctored_exam_results returns an appropriate
-        status message when when messaging queue is down.
-        """
-        url = reverse(
-            'get_proctored_exam_results',
-            kwargs={'course_id': unicode(self.course.id)}
-        )
-        message_queue_error = 'Error occured. Please try again later'
-
-        with patch('lms.djangoapps.instructor_task.api.submit_proctored_exam_results_report') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
 
     def test_access_course_finance_admin_with_invalid_course_key(self):
         """
@@ -3181,31 +3084,6 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
                 response = self.client.post(url, {})
             self.assertIn(success_status, response.content)
 
-
-    @ddt.data(*REPORTS_DATA)
-    @ddt.unpack
-    @valid_problem_location
-    def test_calculate_report_csv_queue_connection_error(self, report_type, instructor_api_endpoint, task_api_endpoint,
-                                          extra_instructor_api_kwargs):
-        kwargs = {'course_id': unicode(self.course.id)}
-        kwargs.update(extra_instructor_api_kwargs)
-        url = reverse(instructor_api_endpoint, kwargs=kwargs)
-        message_queue_error = 'Error occured. Please try again later'
-        if report_type == 'problem responses':
-            with patch(task_api_endpoint) as mock:
-                mock.side_effect = QueueConnectionError()
-                response = self.client.post(url, {'problem_location': ''})
-            self.assertEqual(response.status_code, 400)
-            self.assertIn(message_queue_error, response.content)
-        else:
-            CourseFinanceAdminRole(self.course.id).add_users(self.instructor)
-            with patch(task_api_endpoint) as mock:
-                mock.side_effect = QueueConnectionError()
-                response = self.client.post(url, {})
-            self.assertEqual(response.status_code, 400)
-            self.assertIn(message_queue_error, response.content)
-
-
     @ddt.data(*EXECUTIVE_SUMMARY_DATA)
     @ddt.unpack
     def test_executive_summary_report_success(
@@ -3252,29 +3130,6 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
         self.assertIn(already_running_status, response.content)
 
 
-    @ddt.data(*EXECUTIVE_SUMMARY_DATA)
-    @ddt.unpack
-    def test_executive_summary_report_queue_connection_error(
-            self,
-            report_type,
-            instructor_api_endpoint,
-            task_api_endpoint,
-            extra_instructor_api_kwargs
-    ):
-        kwargs = {'course_id': unicode(self.course.id)}
-        kwargs.update(extra_instructor_api_kwargs)
-        url = reverse(instructor_api_endpoint, kwargs=kwargs)
-        message_queue_error = 'Error occured. Please try again later'
-
-        CourseFinanceAdminRole(self.course.id).add_users(self.instructor)
-        with patch(task_api_endpoint) as mock:
-            mock.side_effect = QueueConnectionError()
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
-
     def test_get_ora2_responses_success(self):
         url = reverse('export_ora2_data', kwargs={'course_id': unicode(self.course.id)})
 
@@ -3297,19 +3152,6 @@ class TestInstructorAPILevelsDataDump(SharedModuleStoreTestCase, LoginEnrollment
                                  " when it is" \
                                  " complete.".format(report_type=report_type)
         self.assertIn(already_running_status, response.content)
-
-    def test_get_ora2_responses_queue_connection_error(self):
-
-        url = reverse('export_ora2_data', kwargs={'course_id': unicode(self.course.id)})
-        message_queue_error = 'Error occured. Please try again later'
-
-        with patch('lms.djangoapps.instructor_task.api.submit_export_ora2_data') as mock_submit_ora2_task:
-            mock_submit_ora2_task.side_effect = QueueConnectionError()
-            response = self.client.post(url, {})
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
 
     def test_get_student_progress_url(self):
         """ Test that progress_url is in the successful response. """
@@ -3913,23 +3755,6 @@ class TestInstructorSendEmail(SiteMixin, SharedModuleStoreTestCase, LoginEnrollm
             template_name=org_template,
             from_addr=org_email
         ).count())
-
-    def test_send_email_queue_connection_error(self):
-        """
-        write doc
-        :return:
-        """
-        url = reverse('send_email', kwargs={'course_id': self.course.id.to_deprecated_string()})
-        message_queue_error = 'Error occured. Please try again later'
-
-        with patch('lms.djangoapps.instructor_task.api.submit_bulk_course_email') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.client.post(url, self.full_test_message)
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
-
 
 class MockCompletionInfo(object):
     """Mock for get_task_completion_info"""
@@ -5303,22 +5128,3 @@ class TestBulkCohorting(SharedModuleStoreTestCase):
         self.verify_success_on_file_content(
             'username,email,cohort\r\nfoo_username,bar_email,baz_cohort', mock_store_upload, mock_cohort_task
         )
-
-    def test_add_users_to_cohorts_queue_connection_error(self):
-        """
-        write doc
-        :return:
-        """
-
-        file_content = 'username,email,cohort\nfoo_username,bar_email,baz_cohort'
-        message_queue_error = 'Error occured. Please try again later'
-
-        self.client.login(username=self.staff_user.username, password='test')
-
-        with patch('lms.djangoapps.instructor_task.api.submit_cohort_students') as submit_task_function:
-            error = QueueConnectionError()
-            submit_task_function.side_effect = error
-            response = self.call_add_users_to_cohorts(file_content)
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn(message_queue_error, response.content)
