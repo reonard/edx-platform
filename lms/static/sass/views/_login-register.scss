@@ -225,7 +225,7 @@
             outline: none;
         }
 
-        div[class^="hidden"] {
+        div[class*="hidden-"] {
             margin: 0;
         }
 
