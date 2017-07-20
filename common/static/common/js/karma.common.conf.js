@@ -436,6 +436,28 @@ function configure(config, options) {
         files: files,
         preprocessors: preprocessors
     }));
+
+    config.set(_.extend(baseConfig, {
+      webpack: { // kind of a copy of your webpack config
+      devtool: 'inline-source-map', // just do inline source maps instead of the default
+      module: {
+        loaders: [{
+          test: /\.jsx$/,
+          exclude: /\/node_modules\//,
+          loader: 'babel-loader',
+          query: {
+            presets: ['airbnb'],
+          },
+        }],
+      },
+      externals: {
+        cheerio: 'window',
+        'react/addons': true,
+        'react/lib/ExecutionEnvironment': true,
+        'react/lib/ReactContext': true,
+      },
+    },
+  }));
 }
 
 module.exports = {
