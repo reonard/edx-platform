@@ -34,7 +34,6 @@ from courseware.tests.factories import GlobalStaffFactory, InstructorFactory, Us
 from lms.djangoapps.grades.tests.utils import mock_passing_grade
 from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
 from lms.djangoapps.verify_student.tests.factories import SoftwareSecurePhotoVerificationFactory
-from lms.djangoapps.instructor_task.api_helper import QueueConnectionError
 from student.models import CourseEnrollment
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
@@ -327,7 +326,6 @@ class CertificatesInstructorApiTest(SharedModuleStoreTestCase):
         res_json = json.loads(response.content)
         self.assertIsNotNone(res_json['message'])
         self.assertIsNotNone(res_json['task_id'])
-
 
     def test_certificate_regeneration_success(self):
         """
@@ -887,6 +885,7 @@ class GenerateCertificatesInstructorApiTest(SharedModuleStoreTestCase):
             res_json['message'],
             u'Invalid data, generate_for must be "new" or "all".'
         )
+
 
 @attr(shard=1)
 @ddt.ddt

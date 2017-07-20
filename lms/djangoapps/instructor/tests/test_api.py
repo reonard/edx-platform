@@ -52,7 +52,7 @@ from lms.djangoapps.instructor.views.api import (
     generate_unique_password,
     require_finance_admin
 )
-from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError, QueueConnectionError
+from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError
 from openedx.core.djangoapps.course_groups.cohorts import set_course_cohorted
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.site_configuration.tests.mixins import SiteMixin
@@ -198,8 +198,6 @@ INSTRUCTOR_POST_ENDPOINTS = set([
     'spent_registration_codes',
     'students_update_enrollment',
     'update_forum_role_membership',
-    'get_course_survey_results',
-    'problem_grade_report',
 ])
 
 
