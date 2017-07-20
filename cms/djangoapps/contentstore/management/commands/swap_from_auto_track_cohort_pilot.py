@@ -24,6 +24,9 @@ class Command(BaseCommand):
     """
 
     def handle(self, *args, **options):
+
+        errors = []
+
         module_store = modulestore()
 
         verified_track_cohorts_settings = self._enabled_settings()
@@ -38,11 +41,11 @@ class Command(BaseCommand):
                 try:
                     course_key = SlashSeparatedCourseKey.from_string(course_id)
                 except InvalidKeyError:
-                    raise CommandError("Invalid course_key: '%s'." % course_id)
+                    errors.append("Invalid course_key: '%s'" % course_id)
 
             items = module_store.get_items(course_key)
             if not items:
-                raise CommandError("Course with %s key not found." % course_id)
+                errors.append("Items for Course with key '%s' not found." % course_id)
 
             # Get the CourseUserGroup IDs for the audit course names
             audit_course_user_group_ids = CourseUserGroup.objects.filter(
@@ -63,18 +66,21 @@ class Command(BaseCommand):
                 course_user_group_id__in=random_audit_course_user_group_ids
             ))
 
+            if not random_audit_course_user_group_partition_groups:
+                errors.append('No Audit Course Groups found with names: %s' % audit_cohort_names)
+
             # Get the single Verified Track Cohorted Course for the course
-            verified_track = VerifiedTrackCohortedCourse.objects.get(course_key=course_key)
+            verified_track_cohorted_course = VerifiedTrackCohortedCourse.objects.get(course_key=course_key)
 
             # If there is no verified track, raise an error
-            if not verified_track:
-                raise CommandError('No VerifiedTrackCohortedCourse found for course: %s' % course_id)
+            if not verified_track_cohorted_course:
+                errors.append("No VerifiedTrackCohortedCourse found for course: '%s'" % course_id)
 
             # Get the single CourseUserGroupPartitionGroup for the verified_track based on the verified_track name
             verified_course_user_group = CourseUserGroup.objects.get(
                 course_id=course_key,
                 group_type=CourseUserGroup.COHORT,
-                name=verified_track.verified_cohort_name
+                name=verified_track_cohorted_course.verified_cohort_name
             )
             verified_course_user_group_partition_group = CourseUserGroupPartitionGroup.objects.get(
                 course_user_group_id=verified_course_user_group.id
@@ -91,13 +97,9 @@ class Command(BaseCommand):
             )
             # Verify that the enrollment track course modes exist
             if not audit_course_mode or not verified_course_mode:
-                raise CommandError('Audit or Verified course modes are not defined for course: %s' % course_id)
+                errors.append("Audit or Verified course modes are not defined for course: '%s'" % course_id)
 
             for item in items:
-                # Checks whether or not an xblock is published, taken from contentstore/views/item.py create_xblock_info
-                is_library_block = isinstance(item.location, LibraryUsageLocator)
-                published = modulestore().has_published_version(item) if not is_library_block else None
-
                 # Verify that there exists group access for this xblock, otherwise skip these checks
                 if item.group_access:
                     set_audit_enrollment_track = False
@@ -115,7 +117,7 @@ class Command(BaseCommand):
                             set_audit_enrollment_track = True
 
                     # Check the partition and group IDs for the verified course group, if it exists in
-                    # the xblock's accesssettings then set the verified track flag to true
+                    # the xblock's access settings then set the verified track flag to true
                     verified_partition_group_access = item.group_access.get(
                         verified_course_user_group_partition_group.partition_id,
                         None
@@ -133,19 +135,29 @@ class Command(BaseCommand):
 
                     # If either the audit track, or verified track needed an update, set the access, update and publish
                     if set_verified_enrollment_track or set_audit_enrollment_track:
+                        # Sets whether or not an xblock is published,
+                        # taken from contentstore/views/item.py create_xblock_info
+                        is_library_block = isinstance(item.location, LibraryUsageLocator)
+                        published = modulestore().has_published_version(item) if not is_library_block else None
+
                         # Check that the xblock is published if it needs changes, otherwise raise an error
                         if not published:
-                            raise CommandError('XBlock for course, %s needs access changes, but is a draft' % course_id)
-                        item.group_access = {ENROLLMENT_TRACK_PARTITION_ID: enrollment_track_group_access}
-                        module_store.update_item(item, ModuleStoreEnum.UserID.mgmt_command)
-                        module_store.publish(item.location, ModuleStoreEnum.UserID.mgmt_command)
+                            errors.append("XBlock with location '%s' needs access changes, but is a draft"
+                                          % item.location)
+
+                        # If there are errors, don't update anything
+                        if not errors:
+                            item.group_access = {ENROLLMENT_TRACK_PARTITION_ID: enrollment_track_group_access}
+                            # module_store.update_item(item, ModuleStoreEnum.UserID.mgmt_command)
+                            # module_store.publish(item.location, ModuleStoreEnum.UserID.mgmt_command)
 
             partitions_to_delete = random_audit_course_user_group_partition_groups
             partitions_to_delete.append(verified_course_user_group_partition_group)
 
-            # Check if we should delete any partition groups,
-            # Taken from contentstore/views/course.py.remove_content_or_experiment_group
-            if partitions_to_delete:
+            # Check if we should delete any partition groups if there are no errors.
+            # If there are errors, none of the xblock items will have been updated,
+            # so this section will throw errors for each partition in use
+            if partitions_to_delete and not errors:
                 partition_service = PartitionService(course_key)
                 course = partition_service.get_course()
                 for partition_to_delete in partitions_to_delete:
@@ -155,21 +167,31 @@ class Command(BaseCommand):
                     group_id = int(partition_to_delete.group_id)
 
                     # Sanity check to verify that all of the groups being deleted are empty,
-                    # since they should have been converted to use enrollment tracks instead
+                    # since they should have been converted to use enrollment tracks instead.
+                    # Taken from contentstore/views/course.py.remove_content_or_experiment_group
                     usages = GroupConfiguration.get_partitions_usage_info(module_store, course)
                     used = group_id in usages
                     if used:
-                        raise("Content group %s is in use and cannot be deleted." % partition_to_delete.group_id)
+                        errors.append("Content group '%s' is in use and cannot be deleted."
+                                      % partition_to_delete.group_id)
 
-                    # Remove the groups that match the group ID of the partition to be deleted
-                    matching_groups = [group for group in partition.groups if group.id == group_id]
-                    if matching_groups:
-                        group_index = partition.groups.index(matching_groups[0])
-                        partition.groups.pop(group_index)
+                    # If there are not errors, proceed to update the course and user_partitions
+                    if not errors:
+                        # Remove the groups that match the group ID of the partition to be deleted
+                        # Else if there are no match groups left, remove the user partition
+                        matching_groups = [group for group in partition.groups if group.id == group_id]
+                        if matching_groups:
+                            group_index = partition.groups.index(matching_groups[0])
+                            partition.groups.pop(group_index)
+                            # Update the course user partition with the updated groups
+                            course.user_partitions[partition_index] = partition
+                        else:
+                            course.user_partitions.pop(partition_index)
+                        module_store.update_item(course, ModuleStoreEnum.UserID.mgmt_command)
 
-                    # Update the course user partition with the updated groups
-                    course.user_partitions[partition_index] = partition
-                    module_store.update_item(course, ModuleStoreEnum.UserID.mgmt_command)
+            # If there are any errors, join them together and raise the CommandError
+            if errors:
+                raise CommandError("\n".join(errors))
 
     def _enabled_settings(self):
         """
