@@ -39,7 +39,7 @@ from django.utils.translation import ugettext_noop
 from django_countries.fields import CountryField
 from model_utils.models import TimeStampedModel
 from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
+from opaque_keys.edx.locator import CourseLocator
 from pytz import UTC
 from simple_history.models import HistoricalRecords
 
@@ -1427,7 +1427,7 @@ class CourseEnrollment(models.Model):
         """
         assert isinstance(course_id_partial, CourseKey)
         assert not course_id_partial.run  # None or empty string
-        course_key = SlashSeparatedCourseKey(course_id_partial.org, course_id_partial.course, '')
+        course_key = CourseLocator(course_id_partial.org, course_id_partial.course, '')
         querystring = unicode(course_key.to_deprecated_string())
         try:
             return cls.objects.filter(

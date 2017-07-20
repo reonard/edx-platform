@@ -12,7 +12,6 @@ import ddt
 import pytz
 from django.core.exceptions import ValidationError
 from django.test import TestCase
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
 from opaque_keys.edx.locator import CourseLocator
 
 from course_modes.helpers import enrollment_mode_display
@@ -28,7 +27,7 @@ class CourseModeModelTest(TestCase):
 
     def setUp(self):
         super(CourseModeModelTest, self).setUp()
-        self.course_key = SlashSeparatedCourseKey('Test', 'TestCourse', 'TestCourseRun')
+        self.course_key = CourseLocator('Test', 'TestCourse', 'TestCourseRun')
         CourseMode.objects.all().delete()
 
     def tearDown(self):
@@ -151,7 +150,7 @@ class CourseModeModelTest(TestCase):
         modes = CourseMode.modes_for_course(self.course_key)
         self.assertEqual([expired_mode_value, mode1], modes)
 
-        modes = CourseMode.modes_for_course(SlashSeparatedCourseKey('TestOrg', 'TestCourse', 'TestRun'))
+        modes = CourseMode.modes_for_course(CourseLocator('TestOrg', 'TestCourse', 'TestRun'))
         self.assertEqual([CourseMode.DEFAULT_MODE], modes)
 
     def test_verified_mode_for_course(self):
