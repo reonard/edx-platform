@@ -7,7 +7,8 @@ define(['backbone', 'gettext', 'underscore'], function(Backbone, gettext, _) {
             summary: {},
             messages: [],
             empty: true,
-            xblock_id: null
+            xblock_id: null,
+            isUnit: false
         },
 
         WARNING: 'warning',
@@ -15,11 +16,16 @@ define(['backbone', 'gettext', 'underscore'], function(Backbone, gettext, _) {
         NOT_CONFIGURED: 'not-configured',
 
         parse: function(response) {
-            if (!response.empty) {
-                var summary = 'summary' in response ? response.summary : {};
-                var messages = 'messages' in response ? response.messages : [];
+            var validationMessages = response.validationMessages;
+            if (!validationMessages.empty) {
+                var summary = 'summary' in validationMessages ? validationMessages.summary : {};
+                var messages = 'messages' in validationMessages ? validationMessages.messages : [];
                 if (!summary.text) {
-                    summary.text = gettext('This component has validation issues.');
+                    if (response.isUnit) {
+                        summary.text = gettext('This unit has validation issues.');
+                    } else {
+                        summary.text = gettext('This component has validation issues.');
+                    }
                 }
                 if (!summary.type) {
                     summary.type = this.WARNING;
@@ -32,14 +38,14 @@ define(['backbone', 'gettext', 'underscore'], function(Backbone, gettext, _) {
                         return false;
                     }, this);
                 }
-                response.summary = summary;
-                if (response.showSummaryOnly) {
+                validationMessages.summary = summary;
+                if (validationMessages.showSummaryOnly) {
                     messages = [];
                 }
-                response.messages = messages;
+                validationMessages.messages = messages;
             }
 
-            return response;
+            return validationMessages;
         }
     });
     return XBlockValidationModel;

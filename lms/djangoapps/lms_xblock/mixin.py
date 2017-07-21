@@ -7,8 +7,8 @@ from lazy import lazy
 from xblock.core import XBlock
 from xblock.fields import Boolean, Dict, Scope, String, XBlockMixin
 from xblock.validation import ValidationMessage
-
 from lms.lib.utils import get_parent_unit
+
 from xmodule.modulestore.inheritance import UserPartitionList
 from xmodule.partitions.partitions import NoSuchUserPartitionError, NoSuchUserPartitionGroupError
 
@@ -17,6 +17,8 @@ from xmodule.partitions.partitions import NoSuchUserPartitionError, NoSuchUserPa
 _ = lambda text: text
 
 INVALID_USER_PARTITION_VALIDATION = _(u"This component's access settings refer to deleted or invalid group configurations.")
+INVALID_USER_PARTITION_GROUP_VALIDATION_COMPONENT = _(u"This component's access settings refer to deleted or invalid groups.")
+INVALID_USER_PARTITION_GROUP_VALIDATION_UNIT = _(u"This unit's access settings refer to deleted or invalid groups.")
 INVALID_USER_PARTITION_GROUP_VALIDATION = _(u"This component's access settings refer to deleted or invalid groups.")
 NONSENSICAL_ACCESS_RESTRICTION = _(u"This component's access settings contradict the unit's access settings.")
 NONSENSICAL_ACCESS_RESTRICTION = _(u"This component's access settings contradict its parent's access settings.")
@@ -179,6 +181,9 @@ class LmsBlockMixin(XBlockMixin):
         else:
             return False
 
+    def _is_unit(self):
+        return get_parent_unit(self) is None and self.get_parent()
+
     def validate(self):
         """
         Validates the state of this xblock instance.
@@ -211,12 +216,20 @@ class LmsBlockMixin(XBlockMixin):
             )
 
         if has_invalid_groups:
-            validation.add(
-                ValidationMessage(
-                    ValidationMessage.ERROR,
-                    INVALID_USER_PARTITION_GROUP_VALIDATION
+            if self._is_unit():
+                validation.add(
+                    ValidationMessage(
+                        ValidationMessage.ERROR,
+                        INVALID_USER_PARTITION_GROUP_VALIDATION_UNIT
+                    )
                 )
-            )
+            else:
+                validation.add(
+                    ValidationMessage(
+                        ValidationMessage.ERROR,
+                        INVALID_USER_PARTITION_GROUP_VALIDATION_COMPONENT
+                    )
+                )
 
         if self._has_nonsensical_access_settings():
             validation.add(
