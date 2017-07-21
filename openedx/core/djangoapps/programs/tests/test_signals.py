@@ -10,8 +10,8 @@ from student.tests.factories import UserFactory
 
 from openedx.core.djangoapps.signals.signals import COURSE_CERT_AWARDED
 from openedx.core.djangoapps.programs.signals import handle_course_cert_awarded
-from openedx.core.djangolib.testing.utils import skip_unless_lms
-
+from openedx.core.djangoapps.site_configuration.tests.factories import SiteFactory
+from openedx.core.djangolib.testing.utils import skip_unless_lms, get_mock_request
 
 TEST_USERNAME = 'test-user'
 
@@ -71,8 +71,10 @@ class CertAwardedReceiverTest(TestCase):
         """
         mock_is_learner_issuance_enabled.return_value = True
 
+        request = get_mock_request()
+        request.site = SiteFactory()
         handle_course_cert_awarded(**self.signal_kwargs)
 
         self.assertEqual(mock_is_learner_issuance_enabled.call_count, 1)
         self.assertEqual(mock_task.call_count, 1)
-        self.assertEqual(mock_task.call_args[0], (TEST_USERNAME,))
+        self.assertEqual(mock_task.call_args[0], (TEST_USERNAME, request.site.id))

@@ -1,17 +1,16 @@
 """Management command for backpopulating missing program credentials."""
-from collections import namedtuple
 import logging
+from collections import namedtuple
 
-from django.contrib.auth.models import User
+from certificates.models import GeneratedCertificate, CertificateStatuses  # pylint: disable=import-error
+from course_modes.models import CourseMode
+from django.contrib.sites.models import Site
 from django.core.management import BaseCommand
 from django.db.models import Q
 from opaque_keys.edx.keys import CourseKey
 
-from certificates.models import GeneratedCertificate, CertificateStatuses  # pylint: disable=import-error
-from course_modes.models import CourseMode
 from openedx.core.djangoapps.catalog.utils import get_programs
 from openedx.core.djangoapps.programs.tasks.v1.tasks import award_program_certificates
-
 
 # TODO: Log to console, even with debug mode disabled?
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -38,42 +37,46 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        logger.info('Loading programs from the catalog.')
-        self._load_course_runs()
+        for site in Site.objects.all():
 
-        logger.info('Looking for users who may be eligible for a program certificate.')
-        self._load_usernames()
+            logger.info('Loading programs from the catalog for site %d.', site.id)
+            self._load_course_runs(site)
 
-        if options.get('commit'):
-            logger.info('Enqueuing program certification tasks for %d candidates.', len(self.usernames))
-        else:
-            logger.info(
-                'Found %d candidates. To enqueue program certification tasks, pass the -c or --commit flags.',
-                len(self.usernames)
-            )
-            return
+            logger.info('Looking for users who may be eligible for a program certificate for site %d.', site.id)
+            self._load_usernames()
 
-        succeeded, failed = 0, 0
-        for username in self.usernames:
-            try:
-                award_program_certificates.delay(username)
-            except:  # pylint: disable=bare-except
-                failed += 1
-                logger.exception('Failed to enqueue task for user [%s]', username)
+            if options.get('commit'):
+                logger.info('Enqueuing program certification tasks for %d candidates for site %d.', len(self.usernames),
+                            site.id)
             else:
-                succeeded += 1
-                logger.debug('Successfully enqueued task for user [%s]', username)
+                logger.info(
+                    'Found %d candidates for site %d. To enqueue program certification tasks, '
+                    'pass the -c or --commit flags.',
+                    len(self.usernames), site.id
+                )
+                return
 
-        logger.info(
-            'Done. Successfully enqueued tasks for %d candidates. '
-            'Failed to enqueue tasks for %d candidates.',
-            succeeded,
-            failed
-        )
+            succeeded, failed = 0, 0
+            for username in self.usernames:
+                try:
+                    award_program_certificates.delay(username, site.id)
+                except:  # pylint: disable=bare-except
+                    failed += 1
+                    logger.exception('Failed to enqueue task for user [%s] for site [%d]', username, site.id)
+                else:
+                    succeeded += 1
+                    logger.debug('Successfully enqueued task for user [%s] for site [%d]', username, site.id)
 
-    def _load_course_runs(self):
+            logger.info(
+                'Done. Successfully enqueued tasks for %d candidates. '
+                'Failed to enqueue tasks for %d candidates.',
+                succeeded,
+                failed
+            )
+
+    def _load_course_runs(self, site):
         """Find all course runs which are part of a program."""
-        programs = get_programs()
+        programs = get_programs(site)
         self.course_runs = self._flatten(programs)
 
     def _flatten(self, programs):

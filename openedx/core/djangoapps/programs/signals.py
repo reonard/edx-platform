@@ -6,6 +6,7 @@ import logging
 from django.dispatch import receiver
 
 from openedx.core.djangoapps.signals.signals import COURSE_CERT_AWARDED
+from openedx.core.djangoapps.theming.helpers import get_current_site
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,4 +52,4 @@ def handle_course_cert_awarded(sender, user, course_key, mode, status, **kwargs)
     )
     # import here, because signal is registered at startup, but items in tasks are not yet able to be loaded
     from openedx.core.djangoapps.programs.tasks.v1.tasks import award_program_certificates
-    award_program_certificates.delay(user.username)
+    award_program_certificates.delay(user.username, get_current_site().id)

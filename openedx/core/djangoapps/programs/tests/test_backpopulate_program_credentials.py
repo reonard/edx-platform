@@ -1,11 +1,14 @@
 """Tests for the backpopulate_program_credentials management command."""
 import ddt
+import logging
 import mock
-from django.core.management import call_command
-from django.test import TestCase
-
 from certificates.models import CertificateStatuses  # pylint: disable=import-error
 from course_modes.models import CourseMode
+from django.contrib.sites.models import Site
+from django.core.management import call_command
+from django.test import TestCase
+from student.tests.factories import UserFactory
+
 from lms.djangoapps.certificates.api import MODES
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
 from openedx.core.djangoapps.catalog.tests.factories import (
@@ -16,11 +19,11 @@ from openedx.core.djangoapps.catalog.tests.factories import (
 )
 from openedx.core.djangoapps.catalog.tests.mixins import CatalogIntegrationMixin
 from openedx.core.djangoapps.credentials.tests.mixins import CredentialsApiConfigMixin
+from openedx.core.djangoapps.site_configuration.tests.factories import SiteFactory
 from openedx.core.djangolib.testing.utils import skip_unless_lms
-from student.tests.factories import UserFactory
 
 COMMAND_MODULE = 'openedx.core.djangoapps.programs.management.commands.backpopulate_program_credentials'
-
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 @ddt.ddt
 @mock.patch(COMMAND_MODULE + '.get_programs')
@@ -32,6 +35,9 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
 
     def setUp(self):
         super(BackpopulateProgramCredentialsTests, self).setUp()
+
+        Site.objects.all().delete()
+        self.site = SiteFactory()
 
         self.alice = UserFactory()
         self.bob = UserFactory()
@@ -77,7 +83,7 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
         call_command('backpopulate_program_credentials', commit=commit)
 
         if commit:
-            mock_task.assert_called_once_with(self.alice.username)
+            mock_task.assert_called_once_with(self.alice.username, self.site.id)
         else:
             mock_task.assert_not_called()
 
@@ -110,10 +116,13 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
         call_command('backpopulate_program_credentials', commit=True)
 
         # The task should be called for both users since professional and no-id-professional are equivalent.
-        mock_task.assert_has_calls([mock.call(self.alice.username), mock.call(self.bob.username)])
+        mock_task.assert_has_calls([
+            mock.call(self.alice.username, self.site.id),
+            mock.call(self.bob.username, self.site.id)
+        ])
 
     @ddt.data(
-        [
+        ([
             ProgramFactory(
                 courses=[
                     CourseFactory(course_runs=[
@@ -128,7 +137,7 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
                     ]),
                 ]
             ),
-        ],
+        ]),
         [
             ProgramFactory(
                 courses=[
@@ -173,8 +182,8 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
         call_command('backpopulate_program_credentials', commit=True)
 
         calls = [
-            mock.call(self.alice.username),
-            mock.call(self.bob.username)
+            mock.call(self.alice.username, self.site.id),
+            mock.call(self.bob.username, self.site.id)
         ]
         mock_task.assert_has_calls(calls, any_order=True)
 
@@ -211,7 +220,7 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
 
         call_command('backpopulate_program_credentials', commit=True)
 
-        mock_task.assert_called_once_with(self.alice.username)
+        mock_task.assert_called_once_with(self.alice.username, self.site.id)
 
     def test_handle_mode_slugs(self, mock_task, mock_get_programs):
         """
@@ -245,7 +254,7 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
 
         call_command('backpopulate_program_credentials', commit=True)
 
-        mock_task.assert_called_once_with(self.alice.username)
+        mock_task.assert_called_once_with(self.alice.username, self.site.id)
 
     def test_handle_passing_status(self, mock_task, mock_get_programs):
         """
@@ -284,7 +293,7 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
 
         call_command('backpopulate_program_credentials', commit=True)
 
-        mock_task.assert_called_once_with(self.alice.username)
+        mock_task.assert_called_once_with(self.alice.username, self.site.id)
 
     @mock.patch(COMMAND_MODULE + '.logger.exception')
     def test_handle_enqueue_failure(self, mock_log, mock_task, mock_get_programs):
@@ -327,7 +336,71 @@ class BackpopulateProgramCredentialsTests(CatalogIntegrationMixin, CredentialsAp
         self.assertTrue(mock_log.called)
 
         calls = [
-            mock.call(self.alice.username),
-            mock.call(self.bob.username)
+            mock.call(self.alice.username, self.site.id),
+            mock.call(self.bob.username, self.site.id)
+        ]
+        mock_task.assert_has_calls(calls, any_order=True)
+
+    def test_handle_with_multiple_sites(self, mock_task, mock_get_programs):
+        """ Verify the command iterates over all Sites in the system. """
+
+        Site.objects.all().delete()
+        sites = [SiteFactory(domain='test1.fake'), SiteFactory(domain='test2.fake')]
+        self.assertEqual(Site.objects.all().count(), 2)
+
+        mock_get_programs.side_effect = (
+            [
+                ProgramFactory(
+                    courses=[
+                        CourseFactory(course_runs=[
+                            CourseRunFactory(key=self.course_run_key),
+                        ]),
+                    ]
+                ),
+            ],
+            [
+                ProgramFactory(
+                    courses=[
+                        CourseFactory(course_runs=[
+                            CourseRunFactory(key=self.alternate_course_run_key),
+                        ]),
+                    ]
+                ),
+            ],
+        )
+
+        GeneratedCertificateFactory(
+            user=self.alice,
+            course_id=self.course_run_key,
+            mode=MODES.verified,
+            status=CertificateStatuses.downloadable,
+        )
+
+        GeneratedCertificateFactory(
+            user=self.bob,
+            course_id=self.course_run_key,
+            mode=MODES.verified,
+            status=CertificateStatuses.downloadable,
+        )
+        GeneratedCertificateFactory(
+            user=self.alice,
+            course_id=self.alternate_course_run_key,
+            mode=MODES.verified,
+            status=CertificateStatuses.downloadable,
+        )
+        GeneratedCertificateFactory(
+            user=self.bob,
+            course_id=self.alternate_course_run_key,
+            mode=MODES.verified,
+            status=CertificateStatuses.downloadable,
+        )
+
+        call_command('backpopulate_program_credentials', commit=True)
+        self.assertEqual(mock_get_programs.call_count, 2)
+        calls = [
+            mock.call(self.alice.username, sites[0].id),
+            mock.call(self.bob.username, sites[0].id),
+            mock.call(self.alice.username, sites[1].id),
+            mock.call(self.bob.username, sites[1].id),
         ]
         mock_task.assert_has_calls(calls, any_order=True)

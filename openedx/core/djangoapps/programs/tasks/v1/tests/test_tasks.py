@@ -16,6 +16,7 @@ from edx_rest_api_client.client import EdxRestApiClient
 from openedx.core.djangoapps.catalog.tests.mixins import CatalogIntegrationMixin
 from openedx.core.djangoapps.credentials.tests.mixins import CredentialsApiConfigMixin
 from openedx.core.djangoapps.programs.tasks.v1 import tasks
+from openedx.core.djangoapps.site_configuration.tests.factories import SiteFactory
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from student.tests.factories import UserFactory
 
@@ -130,6 +131,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         super(AwardProgramCertificatesTestCase, self).setUp()
         self.create_credentials_config()
         self.student = UserFactory.create(username='test-student')
+        self.site = SiteFactory()
 
         self.catalog_integration = self.create_catalog_integration()
         ClientFactory.create(name='credentials')
@@ -145,8 +147,8 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         Checks that the Programs API is used correctly to determine completed
         programs.
         """
-        tasks.award_program_certificates.delay(self.student.username).get()
-        mock_get_completed_programs.assert_called_once_with(self.student)
+        tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
+        mock_get_completed_programs.assert_called_once_with(self.site, self.student)
 
     @ddt.data(
         ([1], [2, 3]),
@@ -169,7 +171,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         mock_get_completed_programs.return_value = [1, 2, 3]
         mock_get_certified_programs.return_value = already_awarded_program_uuids
 
-        tasks.award_program_certificates.delay(self.student.username).get()
+        tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
 
         actual_program_uuids = [call[0][2] for call in mock_award_program_certificate.call_args_list]
         self.assertEqual(actual_program_uuids, expected_awarded_program_uuids)
@@ -191,7 +193,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         getattr(self, 'create_{}_config'.format(disabled_config_type))(**{disabled_config_attribute: False})
         with mock.patch(TASKS_MODULE + '.LOGGER.warning') as mock_warning:
             with self.assertRaises(MaxRetriesExceededError):
-                tasks.award_program_certificates.delay(self.student.username).get()
+                tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
             self.assertTrue(mock_warning.called)
         for mock_helper in mock_helpers:
             self.assertFalse(mock_helper.called)
@@ -202,7 +204,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         passed was not found, and that an exception is logged.
         """
         with mock.patch(TASKS_MODULE + '.LOGGER.exception') as mock_exception:
-            tasks.award_program_certificates.delay('nonexistent-username').get()
+            tasks.award_program_certificates.delay('nonexistent-username', self.site.id).get()
             self.assertTrue(mock_exception.called)
         for mock_helper in mock_helpers:
             self.assertFalse(mock_helper.called)
@@ -218,7 +220,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         are no programs for which to award a certificate.
         """
         mock_get_completed_programs.return_value = []
-        tasks.award_program_certificates.delay(self.student.username).get()
+        tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
         self.assertTrue(mock_get_completed_programs.called)
         self.assertFalse(mock_get_certified_programs.called)
         self.assertFalse(mock_award_program_certificate.called)
@@ -262,7 +264,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
 
         with mock.patch(TASKS_MODULE + '.LOGGER.info') as mock_info, \
                 mock.patch(TASKS_MODULE + '.LOGGER.exception') as mock_exception:
-            tasks.award_program_certificates.delay(self.student.username).get()
+            tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
 
         self.assertEqual(mock_award_program_certificate.call_count, 3)
         mock_exception.assert_called_once_with(mock.ANY, 1, self.student.username)
@@ -281,7 +283,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         retry.
         """
         mock_get_completed_programs.side_effect = self._make_side_effect([Exception('boom'), None])
-        tasks.award_program_certificates.delay(self.student.username).get()
+        tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
         self.assertEqual(mock_get_completed_programs.call_count, 2)
 
     def test_retry_on_credentials_api_errors(
@@ -299,7 +301,7 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
         mock_get_completed_programs.return_value = [1, 2]
         mock_get_certified_programs.return_value = [1]
         mock_get_certified_programs.side_effect = self._make_side_effect([Exception('boom'), None])
-        tasks.award_program_certificates.delay(self.student.username).get()
+        tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
         self.assertEqual(mock_get_certified_programs.call_count, 2)
         self.assertEqual(mock_award_program_certificate.call_count, 1)
 
@@ -315,6 +317,6 @@ class AwardProgramCertificatesTestCase(CatalogIntegrationMixin, CredentialsApiCo
             [exceptions.HttpNotFoundError(), None]
         )
 
-        tasks.award_program_certificates.delay(self.student.username).get()
+        tasks.award_program_certificates.delay(self.student.username, self.site.id).get()
 
         self.assertEqual(mock_award_program_certificate.call_count, 2)
