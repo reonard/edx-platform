@@ -30,9 +30,13 @@ class MigrateVerifiedTrackCohortsSetting(ConfigurationModel):
     class Meta(object):
         app_label = "contentstore"
 
-    course_id = TextField(
+    old_course_id = TextField(
         blank=False,
-        help_text="Course key for which to compute grades."
+        help_text="Course key for which to migrate verified track cohorts from"
+    )
+    rerun_course_id = TextField(
+        blank=False,
+        help_text="Course key for which to migrate verified track cohorts to enrollment tracks to"
     )
     audit_cohort_names = TextField(
         help_text="Comma-separated list of audit cohort names"

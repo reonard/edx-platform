@@ -9,4 +9,4 @@ from contentstore.models import PushNotificationConfig, VideoUploadConfig, Migra
 
 admin.site.register(VideoUploadConfig, ConfigurationModelAdmin)
 admin.site.register(PushNotificationConfig, ConfigurationModelAdmin)
-admin.site.register(MigrateVerifiedTrackCohortsSetting, ConfigurationModelAdmin)
+admin.site.register(MigrateVerifiedTrackCohortsSetting, admin.ModelAdmin)

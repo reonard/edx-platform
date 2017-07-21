@@ -1,12 +1,11 @@
 from contentstore.course_group_config import GroupConfiguration
 from contentstore.models import MigrateVerifiedTrackCohortsSetting
-
+from django.conf import settings
 from course_modes.models import CourseMode
 from django.core.management.base import BaseCommand, CommandError
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
-from opaque_keys.edx.locator import LibraryUsageLocator
 
 from openedx.core.djangoapps.course_groups.cohorts import CourseCohort
 from openedx.core.djangoapps.course_groups.models import (CourseUserGroup, CourseUserGroupPartitionGroup)
@@ -32,25 +31,34 @@ class Command(BaseCommand):
         verified_track_cohorts_settings = self._enabled_settings()
 
         for verified_track_cohorts_setting in verified_track_cohorts_settings:
-            course_id = verified_track_cohorts_setting.course_id
+            old_course_id = verified_track_cohorts_setting.old_course_id
+            rerun_course_id = verified_track_cohorts_setting.rerun_course_id
             audit_cohort_names = verified_track_cohorts_setting.get_audit_cohort_names()
 
             try:
-                course_key = CourseKey.from_string(course_id)
+                old_course_key = CourseKey.from_string(old_course_id)
             except InvalidKeyError:
                 try:
-                    course_key = SlashSeparatedCourseKey.from_string(course_id)
+                    old_course_key = SlashSeparatedCourseKey.from_string(old_course_id)
                 except InvalidKeyError:
-                    errors.append("Invalid course_key: '%s'" % course_id)
+                    errors.append("Invalid course_key: '%s'" % old_course_id)
 
-            items = module_store.get_items(course_key)
+            try:
+                rerun_course_key = CourseKey.from_string(rerun_course_id)
+            except InvalidKeyError:
+                try:
+                    rerun_course_key = SlashSeparatedCourseKey.from_string(rerun_course_id)
+                except InvalidKeyError:
+                    errors.append("Invalid course_key: '%s'" % rerun_course_id)
+
+            items = module_store.get_items(rerun_course_key)
             if not items:
-                errors.append("Items for Course with key '%s' not found." % course_id)
+                errors.append("Items for Course with key '%s' not found." % rerun_course_id)
 
-            # Get the CourseUserGroup IDs for the audit course names
+            # Get the CourseUserGroup IDs for the audit course names from the old course
             audit_course_user_group_ids = CourseUserGroup.objects.filter(
                 name__in=audit_cohort_names,
-                course_id=course_key,
+                course_id=old_course_key,
                 group_type=CourseUserGroup.COHORT,
             ).values_list('id', flat=True)
 
@@ -69,16 +77,17 @@ class Command(BaseCommand):
             if not random_audit_course_user_group_partition_groups:
                 errors.append('No Audit Course Groups found with names: %s' % audit_cohort_names)
 
-            # Get the single Verified Track Cohorted Course for the course
-            verified_track_cohorted_course = VerifiedTrackCohortedCourse.objects.get(course_key=course_key)
+            # Get the single Verified Track Cohorted Course for the old course
+            verified_track_cohorted_course = VerifiedTrackCohortedCourse.objects.get(course_key=old_course_key)
 
             # If there is no verified track, raise an error
             if not verified_track_cohorted_course:
-                errors.append("No VerifiedTrackCohortedCourse found for course: '%s'" % course_id)
+                errors.append("No VerifiedTrackCohortedCourse found for course: '%s'" % rerun_course_id)
 
-            # Get the single CourseUserGroupPartitionGroup for the verified_track based on the verified_track name
+            # Get the single CourseUserGroupPartitionGroup for the verified_track
+            # based on the verified_track name for the old course
             verified_course_user_group = CourseUserGroup.objects.get(
-                course_id=course_key,
+                course_id=old_course_key,
                 group_type=CourseUserGroup.COHORT,
                 name=verified_track_cohorted_course.verified_cohort_name
             )
@@ -86,19 +95,20 @@ class Command(BaseCommand):
                 course_user_group_id=verified_course_user_group.id
             )
 
-            # Get the enrollment track CourseModes for the course
+            # Get the enrollment track CourseModes for the new course
             audit_course_mode = CourseMode.objects.get(
-                course_id=course_key,
+                course_id=rerun_course_key,
                 mode_slug=CourseMode.AUDIT
             )
             verified_course_mode = CourseMode.objects.get(
-                course_id=course_key,
+                course_id=rerun_course_key,
                 mode_slug=CourseMode.VERIFIED
             )
             # Verify that the enrollment track course modes exist
             if not audit_course_mode or not verified_course_mode:
-                errors.append("Audit or Verified course modes are not defined for course: '%s'" % course_id)
+                errors.append("Audit or Verified course modes are not defined for course: '%s'" % rerun_course_id)
 
+            items_to_update = []
             for item in items:
                 # Verify that there exists group access for this xblock, otherwise skip these checks
                 if item.group_access:
@@ -129,36 +139,37 @@ class Command(BaseCommand):
                     # Add the enrollment track ids to a group access array
                     enrollment_track_group_access = []
                     if set_audit_enrollment_track:
-                        enrollment_track_group_access.append(audit_course_mode.id)
+                        enrollment_track_group_access.append(settings.COURSE_ENROLLMENT_MODES['audit'])
                     if set_verified_enrollment_track:
-                        enrollment_track_group_access.append(verified_course_mode.id)
+                        enrollment_track_group_access.append(settings.COURSE_ENROLLMENT_MODES['verified'])
 
                     # If either the audit track, or verified track needed an update, set the access, update and publish
                     if set_verified_enrollment_track or set_audit_enrollment_track:
-                        # Sets whether or not an xblock is published,
-                        # taken from contentstore/views/item.py create_xblock_info
-                        is_library_block = isinstance(item.location, LibraryUsageLocator)
-                        published = modulestore().has_published_version(item) if not is_library_block else None
+                        # Sets whether or not an xblock has changes
+                        has_changes = module_store.has_changes(item)
 
-                        # Check that the xblock is published if it needs changes, otherwise raise an error
-                        if not published:
-                            errors.append("XBlock with location '%s' needs access changes, but is a draft"
-                                          % item.location)
-
-                        # If there are errors, don't update anything
-                        if not errors:
+                        # Check that the xblock does not have changes and add it to be updated, otherwise add an error
+                        if not has_changes:
                             item.group_access = {ENROLLMENT_TRACK_PARTITION_ID: enrollment_track_group_access}
-                            # module_store.update_item(item, ModuleStoreEnum.UserID.mgmt_command)
-                            # module_store.publish(item.location, ModuleStoreEnum.UserID.mgmt_command)
+                            items_to_update.append(item)
+                        else:
+                            errors.append("XBlock '%s' with location '%s' needs access changes, but is a draft"
+                                          % (item.display_name, item.location))
 
             partitions_to_delete = random_audit_course_user_group_partition_groups
             partitions_to_delete.append(verified_course_user_group_partition_group)
+
+            # If there are no errors iterate over and update all of the items that had the access changed
+            if not errors:
+                for item in items_to_update:
+                    module_store.update_item(item, ModuleStoreEnum.UserID.mgmt_command)
+                    module_store.publish(item.location, ModuleStoreEnum.UserID.mgmt_command)
 
             # Check if we should delete any partition groups if there are no errors.
             # If there are errors, none of the xblock items will have been updated,
             # so this section will throw errors for each partition in use
             if partitions_to_delete and not errors:
-                partition_service = PartitionService(course_key)
+                partition_service = PartitionService(rerun_course_key)
                 course = partition_service.get_course()
                 for partition_to_delete in partitions_to_delete:
                     # Get the user partition, and the index of that partition in the course
