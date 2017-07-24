@@ -136,38 +136,31 @@ TASK_SUBMISSION_OK = 'created'
 SUCCESS_MESSAGE_TEMPLATE = "The {} report is being created. " \
                            "To view the status of the report, see Pending Tasks below."
 
-ALREADY_RUNNING_MESSAGE_TEMPLATE = "The {} report is being created. " \
-                                   "To view the status of the report, see Pending Tasks below. " \
-                                   "You will be able to download the report when it is complete."
-
-
-def common_exceptions_400(report_type=None):
+def common_exceptions_400(func):
     """
     Catches common exceptions and renders matching 400 errors.
+    (decorator without arguments)
     """
 
-    def decorator(func):
-        def wrapped(request, *args, **kwargs):  # pylint: disable=missing-docstring
-            use_json = (request.is_ajax() or
-                        request.META.get("HTTP_ACCEPT", "").startswith("application/json"))
-            try:
-                return func(request, *args, **kwargs)
-            except User.DoesNotExist:
-                message = _("User does not exist.")
-            except AlreadyRunningError:
-                message = _("Task is already running.")
-                if report_type:
-                    message = _(ALREADY_RUNNING_MESSAGE_TEMPLATE.format(report_type))
-            except QueueConnectionError as err:
-                message = _(err.message)
-            if use_json:
-                return JsonResponseBadRequest(message)
-            else:
-                return HttpResponseBadRequest(message)
+    def wrapped(request, *args, **kwargs):  # pylint: disable=missing-docstring
+        use_json = (request.is_ajax() or
+                    request.META.get("HTTP_ACCEPT", "").startswith("application/json"))
+        try:
+            return func(request, *args, **kwargs)
+        except User.DoesNotExist:
+            message = 'User does not exist.'
+        except AlreadyRunningError as err:
+            message = str(err)
+        except QueueConnectionError as err:
+            message = str(err)
 
-        return wrapped
+        message = _(message)
+        if use_json:
+            return JsonResponseBadRequest(message)
+        else:
+            return HttpResponseBadRequest(message)
 
-    return decorator
+    return wrapped
 
 
 def require_post_params(*args, **kwargs):
@@ -756,11 +749,11 @@ def students_update_enrollment(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('instructor')
+@common_exceptions_400
 @require_post_params(
     identifiers="stringified list of emails and/or usernames",
     action="add or remove",
 )
-@common_exceptions_400()
 def bulk_beta_modify_access(request, course_id):
     """
     Enroll or unenroll users in beta testing program.
@@ -845,7 +838,7 @@ def bulk_beta_modify_access(request, course_id):
     rolename="'instructor', 'staff', 'beta', or 'ccx_coach'",
     action="'allow' or 'revoke'"
 )
-@common_exceptions_400()
+@common_exceptions_400
 def modify_access(request, course_id):
     """
     Modify staff/instructor access of other user.
@@ -975,7 +968,7 @@ def list_course_role_members(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='problem responses')
+@common_exceptions_400
 def get_problem_responses(request, course_id):
     """
     Initiate generation of a CSV file containing all student answers
@@ -990,6 +983,7 @@ def get_problem_responses(request, course_id):
     """
     course_key = CourseKey.from_string(course_id)
     problem_location = request.POST.get('problem_location', '')
+    report_type = 'problem responses'
 
     try:
         problem_key = UsageKey.from_string(problem_location)
@@ -1211,7 +1205,7 @@ def get_issued_certificates(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='enrolled learner profile')
+@common_exceptions_400
 def get_students_features(request, course_id, csv=False):  # pylint: disable=redefined-outer-name
     """
     Respond with json which contains a summary of all enrolled students profile information.
@@ -1223,7 +1217,7 @@ def get_students_features(request, course_id, csv=False):  # pylint: disable=red
     """
     course_key = CourseKey.from_string(course_id)
     course = get_course_by_id(course_key)
-
+    report_type = 'enrolled learner profile'
     available_features = instructor_analytics.basic.AVAILABLE_FEATURES
 
     # Allow for sites to be able to define additional columns.
@@ -1305,7 +1299,7 @@ def get_students_features(request, course_id, csv=False):  # pylint: disable=red
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='enrollment')
+@common_exceptions_400
 def get_students_who_may_enroll(request, course_id):
     """
     Initiate generation of a CSV file containing information about
@@ -1317,7 +1311,7 @@ def get_students_who_may_enroll(request, course_id):
     """
     course_key = CourseKey.from_string(course_id)
     query_features = ['email']
-
+    report_type = 'enrollment'
     lms.djangoapps.instructor_task.api.submit_calculate_may_enroll_csv(request, course_key, query_features)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -1329,7 +1323,7 @@ def get_students_who_may_enroll(request, course_id):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_POST
 @require_level('staff')
-@common_exceptions_400()
+@common_exceptions_400
 def add_users_to_cohorts(request, course_id):
     """
     View method that accepts an uploaded file (using key "uploaded-file")
@@ -1406,12 +1400,13 @@ def get_coupon_codes(request, course_id):  # pylint: disable=unused-argument
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
 @require_finance_admin
-@common_exceptions_400(report_type='detailed enrollment')
+@common_exceptions_400
 def get_enrollment_report(request, course_id):
     """
     get the enrollment report for the particular course.
     """
     course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    report_type = 'detailed enrollment'
     lms.djangoapps.instructor_task.api.submit_detailed_enrollment_features_csv(request, course_key)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -1424,12 +1419,13 @@ def get_enrollment_report(request, course_id):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
 @require_finance_admin
-@common_exceptions_400(report_type='executive summary')
+@common_exceptions_400
 def get_exec_summary_report(request, course_id):
     """
     get the executive summary report for the particular course.
     """
     course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    report_type = 'executive summary'
     lms.djangoapps.instructor_task.api.submit_executive_summary_report(request, course_key)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -1440,12 +1436,13 @@ def get_exec_summary_report(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='survey')
+@common_exceptions_400
 def get_course_survey_results(request, course_id):
     """
     get the survey results report for the particular course.
     """
     course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    report_type = 'survey'
     lms.djangoapps.instructor_task.api.submit_course_survey_report(request, course_key)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -1456,7 +1453,7 @@ def get_course_survey_results(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='proctored exam results')
+@common_exceptions_400
 def get_proctored_exam_results(request, course_id):
     """
     get the proctored exam resultsreport for the particular course.
@@ -1473,6 +1470,7 @@ def get_proctored_exam_results(request, course_id):
     ]
 
     course_key = CourseKey.from_string(course_id)
+    report_type = 'proctored exam results'
     lms.djangoapps.instructor_task.api.submit_proctored_exam_results_report(request, course_key, query_features)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -1861,7 +1859,7 @@ def get_anon_ids(request, course_id):  # pylint: disable=unused-argument
 @require_post_params(
     unique_student_identifier="email or username of student for whom to get progress url"
 )
-@common_exceptions_400()
+@common_exceptions_400
 def get_student_progress_url(request, course_id):
     """
     Get the progress url of a student.
@@ -1892,7 +1890,7 @@ def get_student_progress_url(request, course_id):
 @require_post_params(
     problem_to_reset="problem urlname to reset"
 )
-@common_exceptions_400()
+@common_exceptions_400
 def reset_student_attempts(request, course_id):
     """
 
@@ -1978,7 +1976,7 @@ def reset_student_attempts(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400()
+@common_exceptions_400
 def reset_student_attempts_for_entrance_exam(request, course_id):  # pylint: disable=invalid-name
     """
 
@@ -2054,7 +2052,7 @@ def reset_student_attempts_for_entrance_exam(request, course_id):  # pylint: dis
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('instructor')
 @require_post_params(problem_to_reset="problem urlname to reset")
-@common_exceptions_400()
+@common_exceptions_400
 def rescore_problem(request, course_id):
     """
     Starts a background process a students attempts counter. Optionally deletes student state for a problem.
@@ -2126,7 +2124,7 @@ def rescore_problem(request, course_id):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('instructor')
 @require_post_params(problem_to_reset="problem urlname to reset", score='overriding score')
-@common_exceptions_400()
+@common_exceptions_400
 def override_problem_score(request, course_id):
     course_key = CourseKey.from_string(course_id)
     score = strip_if_string(request.POST.get('score'))
@@ -2182,7 +2180,7 @@ def override_problem_score(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('instructor')
-@common_exceptions_400()
+@common_exceptions_400
 def rescore_entrance_exam(request, course_id):
     """
     Starts a background process a students attempts counter for entrance exam.
@@ -2410,12 +2408,13 @@ def list_financial_report_downloads(_request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='ORA data')
+@common_exceptions_400
 def export_ora2_data(request, course_id):
     """
     Pushes a Celery task which will aggregate ora2 responses for a course into a .csv
     """
     course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    report_type = 'ORA data'
     lms.djangoapps.instructor_task.api.submit_export_ora2_data(request, course_key)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -2427,11 +2426,12 @@ def export_ora2_data(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='grade')
+@common_exceptions_400
 def calculate_grades_csv(request, course_id):
     """
     AlreadyRunningError is raised if the course's grades are already being updated.
     """
+    report_type = 'grade'
     course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
     lms.djangoapps.instructor_task.api.submit_calculate_grades_csv(request, course_key)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
@@ -2444,7 +2444,7 @@ def calculate_grades_csv(request, course_id):
 @ensure_csrf_cookie
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
-@common_exceptions_400(report_type='problem grade')
+@common_exceptions_400
 def problem_grade_report(request, course_id):
     """
     Request a CSV showing students' grades for all problems in the
@@ -2454,6 +2454,7 @@ def problem_grade_report(request, course_id):
     updated.
     """
     course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    report_type = 'problem grade'
     lms.djangoapps.instructor_task.api.submit_problem_grade_report(request, course_key)
     success_status = _(SUCCESS_MESSAGE_TEMPLATE.format(report_type))
 
@@ -2537,7 +2538,7 @@ def list_forum_members(request, course_id):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_level('staff')
 @require_post_params(send_to="sending to whom", subject="subject line", message="message text")
-@common_exceptions_400()
+@common_exceptions_400
 def send_email(request, course_id):
     """
     Send an email to self, staff, cohorts, or everyone involved in a course.
@@ -2617,7 +2618,7 @@ def send_email(request, course_id):
     rolename="the forum role",
     action="'allow' or 'revoke'",
 )
-@common_exceptions_400()
+@common_exceptions_400
 def update_forum_role_membership(request, course_id):
     """
     Modify user's forum role.
@@ -2882,7 +2883,7 @@ def mark_student_can_skip_entrance_exam(request, course_id):  # pylint: disable=
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_global_staff
 @require_POST
-@common_exceptions_400()
+@common_exceptions_400
 def start_certificate_generation(request, course_id):
     """
     Start generating certificates for all students enrolled in given course.
@@ -2904,7 +2905,7 @@ def start_certificate_generation(request, course_id):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_global_staff
 @require_POST
-@common_exceptions_400()
+@common_exceptions_400
 def start_certificate_regeneration(request, course_id):
     """
     Start regenerating certificates for students whose certificate statuses lie with in 'certificate_statuses'
@@ -3121,7 +3122,7 @@ def get_student(username_or_email, course_key):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True)
 @require_global_staff
 @require_POST
-@common_exceptions_400()
+@common_exceptions_400
 def generate_certificate_exceptions(request, course_id, generate_for=None):
     """
     Generate Certificate for students in the Certificate White List.
@@ -3338,7 +3339,7 @@ def invalidate_certificate(request, generated_certificate, certificate_invalidat
         'notes': certificate_invalidation.notes,
     }
 
-@common_exceptions_400()
+@common_exceptions_400
 def re_validate_certificate(request, course_key, generated_certificate):
     """
     Remove certificate invalidation from db and start certificate generation task for this student.

@@ -25,7 +25,32 @@ log = logging.getLogger(__name__)
 
 class AlreadyRunningError(Exception):
     """Exception indicating that a background task is already running"""
-    pass
+
+    message = 'Requested task is already running'
+    already_running_message_template = "The {} report is being created. " \
+                                       "To view the status of the report, see Pending Tasks below. " \
+                                       "You will be able to download the report when it is complete."
+    report_types = {
+        'grade_problems': 'problem grade',
+        'problem_responses_csv': 'problem responses',
+        'profile_info_csv': 'enrolled learner profile',
+        'may_enroll_info_csv': 'enrollment',
+        'detailed_enrollment_report': 'detailed enrollment',
+        'exec_summary_report': 'executive summary',
+        'course_survey_report': 'survey',
+        'proctored_exam_results_report': 'proctored exam results',
+        'export_ora2_data': 'ORA data',
+        'grade_course': 'grade',
+
+    }
+
+    def __init__(self, task_type=None):
+
+        if task_type and self.report_types[task_type]:
+            message = self.already_running_message_template.format(self.report_types[task_type])
+        else:
+            message = self.message
+        super(AlreadyRunningError, self).__init__(message)
 
 
 class QueueConnectionError(Exception):
@@ -69,7 +94,7 @@ def _reserve_task(course_id, task_type, task_key, task_input, requester):
 
     if _task_is_running(course_id, task_type, task_key):
         log.warning("Duplicate task found for task_type %s and task_key %s", task_type, task_key)
-        raise AlreadyRunningError("requested task is already running")
+        raise AlreadyRunningError(task_type)
 
     try:
         most_recent_id = InstructorTask.objects.latest('id').id

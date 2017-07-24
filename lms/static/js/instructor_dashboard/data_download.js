@@ -325,14 +325,15 @@
                     dataType: 'json',
                     url: url,
                     error: function(error) {
-                        if (e.target.name === 'calculate-grades-csv') {
+                        if (error.responseText){
+                            error_message = JSON.parse(error.responseText);
+                        } else if (e.target.name === 'calculate-grades-csv') {
                             error_message = gettext('Error generating grades. Please try again.');
                         } else if (e.target.name === 'problem-grade-report') {
                             error_message = gettext('Error generating problem grade report. Please try again.');
                         } else if (e.target.name === 'export-ora2-data') {
                             error_message = gettext('Error generating ORA data report. Please try again.');
-                        } else if (error.responseText)
-                            error_message = JSON.parse(error.responseText);
+                        }
                         dataDownloadObj.$reports_request_response_error.text(error_message);
                         return dataDownloadObj.$reports_request_response_error.css({
                             display: 'block'
