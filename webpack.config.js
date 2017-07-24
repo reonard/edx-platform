@@ -186,7 +186,7 @@ var wpconfig = {
         URI: 'URI',
         'react/lib/ExecutionEnvironment': 'react',
         'react/lib/ReactContext': 'react',
-        'react/addons': 'react',
+        'react/addons': 'react'
     },
 
     watchOptions: {
