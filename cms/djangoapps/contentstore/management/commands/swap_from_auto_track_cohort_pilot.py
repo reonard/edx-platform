@@ -28,8 +28,8 @@ class Command(BaseCommand):
         verified_track_cohorts_settings = self._enabled_settings()
 
         for verified_track_cohorts_setting in verified_track_cohorts_settings:
-            old_course_key = verified_track_cohorts_setting.old_course_id
-            rerun_course_key = verified_track_cohorts_setting.rerun_course_id
+            old_course_key = verified_track_cohorts_setting.old_course_key
+            rerun_course_key = verified_track_cohorts_setting.rerun_course_key
             audit_cohort_names = verified_track_cohorts_setting.get_audit_cohort_names()
 
             # Get the CourseUserGroup IDs for the audit course names from the old course
