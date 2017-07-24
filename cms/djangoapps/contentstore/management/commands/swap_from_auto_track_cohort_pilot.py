@@ -3,9 +3,6 @@ from contentstore.models import MigrateVerifiedTrackCohortsSetting
 from django.conf import settings
 from course_modes.models import CourseMode
 from django.core.management.base import BaseCommand, CommandError
-from opaque_keys import InvalidKeyError
-from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
 
 from openedx.core.djangoapps.course_groups.cohorts import CourseCohort
 from openedx.core.djangoapps.course_groups.models import (CourseUserGroup, CourseUserGroupPartitionGroup)
@@ -31,29 +28,9 @@ class Command(BaseCommand):
         verified_track_cohorts_settings = self._enabled_settings()
 
         for verified_track_cohorts_setting in verified_track_cohorts_settings:
-            old_course_id = verified_track_cohorts_setting.old_course_id
-            rerun_course_id = verified_track_cohorts_setting.rerun_course_id
+            old_course_key = verified_track_cohorts_setting.old_course_id
+            rerun_course_key = verified_track_cohorts_setting.rerun_course_id
             audit_cohort_names = verified_track_cohorts_setting.get_audit_cohort_names()
-
-            try:
-                old_course_key = CourseKey.from_string(old_course_id)
-            except InvalidKeyError:
-                try:
-                    old_course_key = SlashSeparatedCourseKey.from_string(old_course_id)
-                except InvalidKeyError:
-                    errors.append("Invalid course_key: '%s'" % old_course_id)
-
-            try:
-                rerun_course_key = CourseKey.from_string(rerun_course_id)
-            except InvalidKeyError:
-                try:
-                    rerun_course_key = SlashSeparatedCourseKey.from_string(rerun_course_id)
-                except InvalidKeyError:
-                    errors.append("Invalid course_key: '%s'" % rerun_course_id)
-
-            items = module_store.get_items(rerun_course_key)
-            if not items:
-                errors.append("Items for Course with key '%s' not found." % rerun_course_id)
 
             # Get the CourseUserGroup IDs for the audit course names from the old course
             audit_course_user_group_ids = CourseUserGroup.objects.filter(
@@ -82,7 +59,7 @@ class Command(BaseCommand):
 
             # If there is no verified track, raise an error
             if not verified_track_cohorted_course:
-                errors.append("No VerifiedTrackCohortedCourse found for course: '%s'" % rerun_course_id)
+                raise CommandError("No VerifiedTrackCohortedCourse found for course: '%s'" % rerun_course_key)
 
             # Get the single CourseUserGroupPartitionGroup for the verified_track
             # based on the verified_track name for the old course
@@ -106,9 +83,13 @@ class Command(BaseCommand):
             )
             # Verify that the enrollment track course modes exist
             if not audit_course_mode or not verified_course_mode:
-                errors.append("Audit or Verified course modes are not defined for course: '%s'" % rerun_course_id)
+                raise CommandError("Audit or Verified course modes are not defined for course: '%s'" % rerun_course_key)
 
+            items = module_store.get_items(rerun_course_key)
             items_to_update = []
+            if not items:
+                raise CommandError("Items for Course with key '%s' not found." % rerun_course_key)
+
             for item in items:
                 # Verify that there exists group access for this xblock, otherwise skip these checks
                 if item.group_access:
@@ -206,6 +187,6 @@ class Command(BaseCommand):
 
     def _enabled_settings(self):
         """
-        Return the latest version of the MigrateVerifiedTrackCohortsSetting
+        Return the enabled entries for the MigrateVerifiedTrackCohortsSetting
         """
         return MigrateVerifiedTrackCohortsSetting.objects.filter(enabled=True)
