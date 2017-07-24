@@ -7,6 +7,7 @@ var webpack = require('webpack');
 var BundleTracker = require('webpack-bundle-tracker');
 var StringReplace = require('string-replace-webpack-plugin');
 var ExtractTextPlugin = require('extract-text-webpack-plugin');
+var BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 
 var isProd = process.env.NODE_ENV === 'production';
 
@@ -63,6 +64,9 @@ var wpconfig = {
             jQuery: 'jquery',
             'window.jQuery': 'jquery'
         }),
+        //new BundleAnalyzerPlugin({
+        //  analyzerMode: 'static'
+        //}),
 
         // Note: Until karma-webpack releases v3, it doesn't play well with
         // the CommonsChunkPlugin. We have a kludge in karma.common.conf.js
